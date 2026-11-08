@@ -93,17 +93,22 @@ public partial class MainWindow : Window
         var targets = _all.Where(x => selected.Contains(x.Category) && x.Timestamp >= cutoff && x.Timestamp < end).ToList();
         if (targets.Count == 0) { MessageBox.Show("There are no matching entries to clear.", "Clear Recent Activity", MessageBoxButton.OK, MessageBoxImage.Information); return; }
         var rangeName = (RangeBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Custom range";
-        var message = $"Remove {targets.Count} recent shortcut{(targets.Count == 1 ? "" : "s")}?\n\nCategories: {string.Join(", ", selected)}\nTime range: {rangeName}\n\nOriginal files will not be touched.";
+        var message = $"Remove {targets.Count} previewed entry/entries from Explorer Home / Recent?\n\nCategories: {string.Join(", ", selected)}\nTime range: {rangeName}\n\nWindows will be asked to remove each entry from Explorer’s recent list. Only matching Recent-folder shortcuts will be deleted; original files will not be touched.";
         if (MessageBox.Show(message, DryRun.IsChecked == true ? "Dry run confirmation" : "Confirm clearing history", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
-        if (DryRun.IsChecked == true) { Log($"DRY RUN: {targets.Count} entries matched; no changes made."); MessageBox.Show($"Dry run complete. {targets.Count} shortcut(s) would be removed. No changes were made.", "Dry run", MessageBoxButton.OK, MessageBoxImage.Information); return; }
+        if (DryRun.IsChecked == true) { Log($"DRY RUN: {targets.Count} entries matched; no changes made."); MessageBox.Show($"Dry run complete. {targets.Count} entry/entries would be removed from Explorer Home / Recent. No changes were made.", "Dry run", MessageBoxButton.OK, MessageBoxImage.Information); return; }
         var success = 0; var failures = new List<string>();
         foreach (var entry in targets)
         {
-            try { File.Delete(entry.ShortcutPath); success++; Log($"Removed shortcut: {entry.ShortcutPath}"); }
-            catch (Exception ex) { failures.Add($"{entry.Name}: {ex.Message}"); Log($"FAILED {entry.ShortcutPath}: {ex}"); }
+            var listRemoved = false;
+            var shortcutRemoved = false;
+            try { RecentDiscovery.RemoveFromExplorerRecentList(entry.TargetPath); listRemoved = true; Log($"Removed from Explorer Recent destinations: {entry.TargetPath}"); }
+            catch (Exception ex) { failures.Add($"{entry.Name} (Explorer list): {ex.Message}"); Log($"FAILED Explorer destination removal {entry.TargetPath}: {ex}"); }
+            try { File.Delete(entry.ShortcutPath); shortcutRemoved = true; Log($"Removed Recent-folder shortcut: {entry.ShortcutPath}"); }
+            catch (Exception ex) { failures.Add($"{entry.Name} (Recent shortcut): {ex.Message}"); Log($"FAILED shortcut deletion {entry.ShortcutPath}: {ex}"); }
+            if (listRemoved && shortcutRemoved) success++;
         }
         RefreshData();
-        var report = $"Cleared {success} of {targets.Count} recent shortcut(s).\n\nExplorer may cache recent-item views; refresh Explorer or sign out if a removed item still appears. Jump Lists and Start recommendations are separate stores and were not changed." + (failures.Count > 0 ? $"\n\nCould not clear {failures.Count}:\n" + string.Join("\n", failures.Take(8)) : "");
+        var report = $"Removed {success} of {targets.Count} entries from both Explorer’s recent list and the Recent folder." + "\n\nExplorer may cache its display briefly; refresh Home if a removed entry remains visible." + (failures.Count > 0 ? $"\n\nSome operations failed:\n" + string.Join("\n", failures.Take(8)) : "");
         MessageBox.Show(report, "Clear report", MessageBoxButton.OK, failures.Count == 0 ? MessageBoxImage.Information : MessageBoxImage.Warning);
     }
     private void Log(string message)
@@ -125,18 +130,52 @@ public sealed class CategoryRow : System.ComponentModel.INotifyPropertyChanged
 public sealed class HistoryEntry
 {
     public required string ShortcutPath { get; init; }
+    public required string TargetPath { get; init; }
     public required string Name { get; init; }
     public required string Type { get; init; }
     public required string Category { get; init; }
     public required DateTime Timestamp { get; init; }
     public string TimestampText => Timestamp.ToString("g");
-    public string Source => "Explorer Recent";
+    public string Source => "Explorer Home / Recent";
     public string Location { get; init; } = "Unknown";
 }
 
 public static class RecentDiscovery
 {
     public static string RecentPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Microsoft", "Windows", "Recent");
+    private const string ExplorerAppId = "Microsoft.Windows.Explorer";
+    private static readonly Guid ApplicationDestinationsClassId = new("86c14003-4d6b-4ef3-a7b4-0506663b2e68");
+    private static readonly Guid ShellItemInterfaceId = new("43826d1e-e718-42ee-bc55-a1e261c37bfe");
+    public static void RemoveFromExplorerRecentList(string targetPath)
+    {
+        var type = Type.GetTypeFromCLSID(ApplicationDestinationsClassId, throwOnError: true)!;
+        var destinations = (IApplicationDestinations)Activator.CreateInstance(type)!;
+        object? shellItem = null;
+        IntPtr shellItemPointer = IntPtr.Zero;
+        try
+        {
+            Marshal.ThrowExceptionForHR(destinations.SetAppID(ExplorerAppId));
+            var iid = ShellItemInterfaceId;
+            Marshal.ThrowExceptionForHR(SHCreateItemFromParsingName(targetPath, IntPtr.Zero, ref iid, out shellItemPointer));
+            shellItem = Marshal.GetObjectForIUnknown(shellItemPointer);
+            Marshal.ThrowExceptionForHR(destinations.RemoveDestination(shellItem));
+        }
+        finally
+        {
+            if (shellItemPointer != IntPtr.Zero) Marshal.Release(shellItemPointer);
+            if (shellItem != null && Marshal.IsComObject(shellItem)) Marshal.FinalReleaseComObject(shellItem);
+            if (Marshal.IsComObject(destinations)) Marshal.FinalReleaseComObject(destinations);
+        }
+    }
+    [ComImport, Guid("12337d35-94c6-48a0-bce7-6a9c69d4d600"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IApplicationDestinations
+    {
+        [PreserveSig] int SetAppID([MarshalAs(UnmanagedType.LPWStr)] string appId);
+        [PreserveSig] int RemoveDestination([MarshalAs(UnmanagedType.Interface)] object destination);
+        [PreserveSig] int RemoveAllDestinations();
+    }
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = true)]
+    private static extern int SHCreateItemFromParsingName([MarshalAs(UnmanagedType.LPWStr)] string path, IntPtr bindingContext, ref Guid interfaceId, out IntPtr shellItem);
     private static readonly HashSet<string> Images = new(StringComparer.OrdinalIgnoreCase) { ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff", ".webp", ".heic", ".svg" };
     private static readonly HashSet<string> Videos = new(StringComparer.OrdinalIgnoreCase) { ".mp4", ".mkv", ".mov", ".avi", ".wmv", ".webm", ".m4v" };
     private static readonly HashSet<string> Audio = new(StringComparer.OrdinalIgnoreCase) { ".mp3", ".wav", ".flac", ".aac", ".m4a", ".ogg", ".wma" };
@@ -157,7 +196,7 @@ public static class RecentDiscovery
                 var stamp = File.GetLastWriteTime(file);
                 var cleanTarget = target.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
                 var name = Path.GetFileName(cleanTarget);
-                result.Add(new HistoryEntry { ShortcutPath = file, Name = string.IsNullOrEmpty(name) ? target : name, Type = isFolder ? "Folder" : string.IsNullOrEmpty(ext) ? "File" : ext.TrimStart('.').ToUpperInvariant(), Category = cat, Timestamp = stamp, Location = Path.GetDirectoryName(cleanTarget) ?? target });
+                result.Add(new HistoryEntry { ShortcutPath = file, TargetPath = target, Name = string.IsNullOrEmpty(name) ? target : name, Type = isFolder ? "Folder" : string.IsNullOrEmpty(ext) ? "File" : ext.TrimStart('.').ToUpperInvariant(), Category = cat, Timestamp = stamp, Location = Path.GetDirectoryName(cleanTarget) ?? target });
             }
             catch { }
         }
