@@ -2,3 +2,13 @@ bin/
 obj/
 .dotnet-home/
 .dotnet-home */
+/.dotnet/
+/.nuget/
+/ClearHistory.exe
+/ClearHistory.dll
+/ClearHistory.deps.json
+/ClearHistory.runtimeconfig.json
+/ClearHistory.pdb
+/ClearHistory.exe.config
+/artifacts/
+/dist/

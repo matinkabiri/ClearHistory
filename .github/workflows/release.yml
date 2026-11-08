@@ -1,0 +1,31 @@
+name: Publish Windows release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Publish self-contained Windows app
+        shell: pwsh
+        run: dotnet publish ClearHistory.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o dist
+      - name: Package release
+        shell: pwsh
+        run: Compress-Archive -Path dist\ClearHistory.exe -DestinationPath ClearHistory-${{ github.ref_name }}-win-x64.zip
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: gh release create $env:GITHUB_REF_NAME ClearHistory-$env:GITHUB_REF_NAME-win-x64.zip --title "ClearHistory $env:GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md

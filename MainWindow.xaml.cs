@@ -3,6 +3,8 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
+using System.Windows.Media.Imaging;
 
 namespace ClearHistory;
 
@@ -15,10 +17,39 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        ApplyRecentFolderIcon();
         foreach (var c in Categories) _categories.Add(new CategoryRow(c));
         CategoryList.ItemsSource = _categories;
         RefreshData();
     }
+    private void ApplyRecentFolderIcon()
+    {
+        var iconInfo = new ShellIconInfo();
+        var result = SHGetFileInfo(RecentDiscovery.RecentPath, 0, ref iconInfo, (uint)Marshal.SizeOf<ShellIconInfo>(), ShgfiIcon | ShgfiSmallIcon);
+        if (result == IntPtr.Zero || iconInfo.IconHandle == IntPtr.Zero) return;
+        try
+        {
+            var source = Imaging.CreateBitmapSourceFromHIcon(iconInfo.IconHandle, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+            source.Freeze();
+            Icon = source;
+        }
+        finally { DestroyIcon(iconInfo.IconHandle); }
+    }
+    private const uint ShgfiIcon = 0x000000100;
+    private const uint ShgfiSmallIcon = 0x000000001;
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct ShellIconInfo
+    {
+        public IntPtr IconHandle;
+        public int IconIndex;
+        public uint Attributes;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string DisplayName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 80)] public string TypeName;
+    }
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr SHGetFileInfo(string path, uint fileAttributes, ref ShellIconInfo fileInfo, uint fileInfoSize, uint flags);
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool DestroyIcon(IntPtr handle);
     private void RangeChanged(object sender, SelectionChangedEventArgs e)
     {
         if (FromDate == null) return;

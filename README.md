@@ -12,6 +12,8 @@ dotnet run --project ClearHistory.csproj
 
 Build output: `bin\Debug\net8.0-windows\ClearHistory.exe`.
 
+The project root also contains a Release build's `ClearHistory.exe` for convenience. It requires the .NET 8 Desktop Runtime. GitHub Releases are created automatically for tags named `v*`; the attached x64 package is self-contained.
+
 ## Sources and safety limits
 
 | Source | Discovery / timestamp | Selective clear |
