@@ -2,8 +2,11 @@ name: Publish Windows release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -21,11 +24,32 @@ jobs:
       - name: Publish self-contained Windows app
         shell: pwsh
         run: dotnet publish ClearHistory.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o dist
-      - name: Package release
-        shell: pwsh
-        run: Compress-Archive -Path dist\ClearHistory.exe -DestinationPath ClearHistory-${{ github.ref_name }}-win-x64.zip
-      - name: Create GitHub Release
+      - name: Select release tag
+        id: release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
-        run: gh release create $env:GITHUB_REF_NAME ClearHistory-$env:GITHUB_REF_NAME-win-x64.zip --title "ClearHistory $env:GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          if ($env:GITHUB_REF -eq 'refs/heads/main' -or ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch' -and $tag -eq 'main')) {
+            $tag = gh release list --limit 1 --json tagName --jq '.[0].tagName'
+          }
+          if ([string]::IsNullOrWhiteSpace($tag)) { throw 'No release tag was found.' }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+      - name: Package release
+        shell: pwsh
+        run: Compress-Archive -Path dist\ClearHistory.exe -DestinationPath ClearHistory-${{ steps.release.outputs.tag }}-win-x64.zip
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        shell: pwsh
+        run: |
+          $tag = $env:RELEASE_TAG
+          if ([string]::IsNullOrWhiteSpace($tag)) { throw 'No release tag was found.' }
+          $asset = "ClearHistory-$tag-win-x64.zip"
+          if ($env:GITHUB_REF -like 'refs/tags/*' -and -not (gh release view $tag 2>$null)) {
+            gh release create $tag $asset --title "ClearHistory $tag" --notes-file RELEASE_NOTES.md
+          } else {
+            gh release upload $tag $asset --clobber
+          }

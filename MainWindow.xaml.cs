@@ -13,7 +13,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<CategoryRow> _categories = new();
     private List<HistoryEntry> _all = new();
     private readonly string _logPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ClearHistory", "operations.log");
-    private static readonly string[] Categories = ["Documents", "Images", "Videos", "Audio", "Archives", "Other files"];
+    private static readonly string[] Categories = ["Folders", "Documents", "Images", "Videos", "Audio", "Archives", "Other files"];
     public MainWindow()
     {
         InitializeComponent();
@@ -152,13 +152,21 @@ public static class RecentDiscovery
                 var target = ResolveTarget(file);
                 if (string.IsNullOrWhiteSpace(target)) continue;
                 var ext = Path.GetExtension(target);
-                var cat = Images.Contains(ext) ? "Images" : Videos.Contains(ext) ? "Videos" : Audio.Contains(ext) ? "Audio" : Archives.Contains(ext) ? "Archives" : IsDocument(ext) ? "Documents" : "Other files";
+                var isFolder = IsFolderTarget(target);
+                var cat = isFolder ? "Folders" : Images.Contains(ext) ? "Images" : Videos.Contains(ext) ? "Videos" : Audio.Contains(ext) ? "Audio" : Archives.Contains(ext) ? "Archives" : IsDocument(ext) ? "Documents" : "Other files";
                 var stamp = File.GetLastWriteTime(file);
-                result.Add(new HistoryEntry { ShortcutPath = file, Name = Path.GetFileName(target), Type = string.IsNullOrEmpty(ext) ? "File" : ext.TrimStart('.').ToUpperInvariant(), Category = cat, Timestamp = stamp, Location = Path.GetDirectoryName(target) ?? target });
+                var cleanTarget = target.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                var name = Path.GetFileName(cleanTarget);
+                result.Add(new HistoryEntry { ShortcutPath = file, Name = string.IsNullOrEmpty(name) ? target : name, Type = isFolder ? "Folder" : string.IsNullOrEmpty(ext) ? "File" : ext.TrimStart('.').ToUpperInvariant(), Category = cat, Timestamp = stamp, Location = Path.GetDirectoryName(cleanTarget) ?? target });
             }
             catch { }
         }
         return result;
+    }
+    private static bool IsFolderTarget(string target)
+    {
+        try { return Directory.Exists(target) || (File.GetAttributes(target) & FileAttributes.Directory) != 0; }
+        catch { return false; }
     }
     private static string? ResolveTarget(string shortcut)
     {

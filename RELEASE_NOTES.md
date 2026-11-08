@@ -3,6 +3,7 @@
 First Windows release.
 
 - Review Recent Items shortcuts by file category and time range.
+- Review recently accessed folders in their own category.
 - Preview entries before clearing.
 - Dry run is enabled by default; clearing requires confirmation.
 - Removes only selected `.lnk` shortcuts and never the original files.

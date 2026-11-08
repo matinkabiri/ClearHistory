@@ -1,6 +1,6 @@
 # Clear Recent Activity
 
-A native WPF utility for reviewing and clearing Windows Recent Items shortcuts. It never opens or deletes the target files. The default time range is the last 24 hours and **Dry run** is enabled on first launch.
+A native WPF utility for reviewing and clearing Windows Recent Items shortcuts, including folder shortcuts. It never opens or deletes the target files. The default time range is the last 24 hours and **Dry run** is enabled on first launch.
 
 ## Run
 
@@ -12,7 +12,7 @@ dotnet run --project ClearHistory.csproj
 
 Build output: `bin\Debug\net8.0-windows\ClearHistory.exe`.
 
-The project root also contains a Release build's `ClearHistory.exe` for convenience. It requires the .NET 8 Desktop Runtime. GitHub Releases are created automatically for tags named `v*`; the attached x64 package is self-contained.
+The project root also contains a Release build's `ClearHistory.exe` for convenience, with its required companion files. It requires the .NET 8 Desktop Runtime. GitHub Releases are created automatically for tags named `v*`; when a commit is pushed to `main`, the latest release receives an updated x64 package. The attached x64 package is self-contained.
 
 ## Sources and safety limits
 
